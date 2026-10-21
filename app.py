@@ -5,8 +5,7 @@ import streamlit as st
 
 from src.analyzer import CATEGORIES, analyze, category_counts, highlighted_html
 from src.sec_client import download_filing, latest_filing, resolve_cik, sec_session
-from src.spider import show_crawler
-from src.document_crawler import show_document_crawler
+from src.filing_reader import show_filing_reader
 
 st.set_page_config(page_title="Wall Street Web Crawler", page_icon="📈", layout="wide")
 st.title("📈 Wall Street Web Crawler")
@@ -40,12 +39,9 @@ if not report:
 
 st.subheader(f"{report['company']} ({report['ticker']})")
 st.write(f"**Form:** {report['form']} · **Filed:** {report['date']} · [Original SEC filing]({report['url']})")
-st.subheader("🕷️ Spider scanning the document")
-st.caption("Animated reconstruction of extracted SEC text; not the original SEC page layout.")
-show_document_crawler(report["results"])
-st.subheader("🕸️ Findings network")
-st.caption("Animated replay of the findings detected by Python. The spider follows each matching passage; it is a visualization, not a separate AI agent.")
-show_crawler(report["results"])
+st.subheader("🕷️ Live document scan")
+st.caption("White-page reconstruction of extracted SEC text. The spider highlights matched terms and draws links between related findings as it moves.")
+show_filing_reader(report["results"])
 counts = category_counts(report["results"])
 cols = st.columns(3)
 for i, (category, count) in enumerate(counts.items()):
