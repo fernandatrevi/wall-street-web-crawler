@@ -95,34 +95,40 @@ const prepared=records.map((r,i)=>{
  const marks=prepare(i);
  return {marks,category:r.category};
 });
-let center={x:paper.clientWidth/2,y:180},from={...center},to={...center};
-let position=0,playing=true,last=performance.now(),linked={};
-const LEG_MS=105, BODY_MS=145, REST_MS=15;
-let phase="body",phaseElapsed=0,activeLeg=0,targets=[];
-function restingFoot(leg){
- const angle=[-1.2,-.4,.4,1.2][leg.i];
- return {x:center.x+leg.side*(185+Math.cos(angle)*30),y:center.y+angle*110};
+// All keywords are extracted and laid out before playback.
+let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
+const STEP_MS=135, BODY_MS=90, REST_MS=15, MAX_REACH=265;
+let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center};
+const order=[0,4,1,5,2,6,3,7]; // one foot at a time, alternating sides
+function baseFoot(leg,origin=center){
+ const angle=[-1.05,-.35,.35,1.05][leg.i];
+ return {x:origin.x+leg.side*(135+Math.cos(angle)*25),y:origin.y+angle*115};
+}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function clampReach(hip,point,reach=MAX_REACH){
+ const d=distance(hip,point);if(d<=reach)return {...point};
+ const s=reach/d;return {x:hip.x+(point.x-hip.x)*s,y:hip.y+(point.y-hip.y)*s};
 }
 function assign(i){
- const e=entries[i],marks=prepared[i].marks;
- if(!marks.length)return false;
- e.p.scrollIntoView({block:"center",behavior:"instant"});
+ const marks=prepared[i].marks;
+ entries[i].p.scrollIntoView({block:"center",behavior:"instant"});
  const locations=marks.map(mark=>({mark,pt:point(mark)}));
- const avg=locations.reduce((acc,o)=>({x:acc.x+o.pt.x,y:acc.y+o.pt.y}),{x:0,y:0});
+ if(!locations.length){position++;if(position<records.length)return assign(position);playing=false;return;}
+ const avg=locations.reduce((a,o)=>({x:a.x+o.pt.x,y:a.y+o.pt.y}),{x:0,y:0});
  avg.x/=locations.length;avg.y/=locations.length;
  from={...center};
- to={x:Math.max(65,Math.min(paper.clientWidth-65,avg.x)),y:avg.y+15};
- const sorted=[...locations].sort((a,b)=>a.pt.x-b.pt.x);
- const count=Math.min(8,sorted.length);
- targets=Array.from({length:count},(_,n)=>{
-  const idx=count===1?0:Math.round(n*(sorted.length-1)/(count-1));
-  return sorted[idx];
+ // No body teleportation: move toward nearby words by a bounded distance.
+ to=clampReach(from,{x:avg.x,y:avg.y+18},145);
+ const left=locations.filter(o=>o.pt.x<=to.x).sort((a,b)=>a.pt.y-b.pt.y);
+ const right=locations.filter(o=>o.pt.x>to.x).sort((a,b)=>a.pt.y-b.pt.y);
+ legs.forEach(leg=>{
+  const pool=leg.side<0?left:right;
+  leg.goal=pool.length?pool[Math.min(pool.length-1,Math.round(leg.i*(pool.length-1)/3))]:null;
+  leg.landed=false;
  });
- legs.forEach((leg,n)=>{leg.goal=targets[n]||null;leg.contact=false;});
- phase="body";phaseElapsed=0;activeLeg=0;
+ phase="body";elapsed=0;activeLeg=0;
  counter.textContent="Scanning "+(i+1)+" / "+records.length+" passages";
  status.textContent=records[i].category+" · "+records[i].keywords;
- return true;
 }
 function connect(mark,category){
  if(linked[category]){
@@ -137,49 +143,50 @@ function reveal(mark,category){
  mark.classList.add("found");connect(mark,category);
 }
 function frame(now){
- const delta=Math.min(45,now-last);last=now;
- if(playing&&records.length)phaseElapsed+=delta;
+ const delta=Math.min(40,now-last);last=now;
+ if(playing&&records.length)elapsed+=delta;
  if(phase==="body"){
-  const t=Math.min(1,phaseElapsed/BODY_MS),ease=t*t*(3-2*t);
-  center.x=from.x+(to.x-from.x)*ease;center.y=from.y+(to.y-from.y)*ease;
-  if(t>=1&&playing){phase="legs";phaseElapsed=0;activeLeg=0;}
+  const t=Math.min(1,elapsed/BODY_MS),ease=t*t*(3-2*t);
+  center={x:from.x+(to.x-from.x)*ease,y:from.y+(to.y-from.y)*ease};
+  if(t>=1&&playing){phase="legs";elapsed=0;activeLeg=0;}
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
+ const movingIndex=phase==="legs"?order[activeLeg]:-1;
  legs.forEach((leg,n)=>{
-  const hip={x:center.x+leg.side*7,y:center.y+(leg.i-1.5)*5};
-  const rest=restingFoot(leg);
-  let foot={...rest};
-  if(phase==="legs"&&n===activeLeg&&leg.goal){
-   // Only this leg moves; all seven others stay at their resting positions.
-   const t=Math.min(1,phaseElapsed/LEG_MS);
-   const reach=t<.5?t*2:(1-t)*2;
-   const smooth=reach*reach*(3-2*reach);
-   const target=point(leg.goal.mark);
-   foot={x:rest.x+(target.x-rest.x)*smooth,
-         y:rest.y+(target.y-rest.y)*smooth-Math.sin(Math.PI*t)*12};
-   if(t>=.5&&!leg.contact){
-    reveal(leg.goal.mark,records[position].category);
-    leg.contact=true;
-   }
+  const hip={x:center.x+leg.side*8,y:center.y+(leg.i-1.5)*7};
+  // Planted feet stay fixed while the body crawls forward.
+  if(!leg.planted)leg.planted=baseFoot(leg);
+  let foot={...leg.planted};
+  if(n===movingIndex){
+   const t=Math.min(1,elapsed/STEP_MS),ease=t*t*(3-2*t);
+   const desired=leg.goal?point(leg.goal.mark):baseFoot(leg);
+   const target=clampReach(hip,desired);
+   foot={x:leg.planted.x+(target.x-leg.planted.x)*ease,
+         y:leg.planted.y+(target.y-leg.planted.y)*ease-Math.sin(Math.PI*t)*22};
   }
+  // Outward-bending knee: keep every limb on its own side.
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.52+leg.side*48,y:hip.y+dy*.52-22};
+  const knee={x:hip.x+dx*.5+leg.side*35,y:hip.y+dy*.5-18};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
- if(playing&&phase==="legs"&&phaseElapsed>=LEG_MS){
-  // Movement lock releases only after the active leg returns to rest.
-  activeLeg++;phaseElapsed=0;
-  if(activeLeg>=legs.length)phase="rest";
+ if(playing&&phase==="legs"&&elapsed>=STEP_MS){
+  const leg=legs[order[activeLeg]];
+  const hip={x:center.x+leg.side*8,y:center.y+(leg.i-1.5)*7};
+  const target=leg.goal?point(leg.goal.mark):baseFoot(leg);
+  leg.planted=clampReach(hip,target);
+  // Highlight only if the foot actually reaches the word.
+  if(leg.goal&&distance(leg.planted,target)<4)reveal(leg.goal.mark,records[position].category);
+  activeLeg++;elapsed=0;
+  if(activeLeg>=order.length)phase="rest";
  }
- if(playing&&phase==="rest"&&phaseElapsed>=REST_MS){
+ if(playing&&phase==="rest"&&elapsed>=REST_MS){
+  // The analysis is already complete; reveal remaining matched words.
   prepared[position].marks.forEach(m=>reveal(m,records[position].category));
   position++;
-  if(position>=records.length){
-   playing=false;play.textContent="Replay";
-   counter.textContent="Complete · "+records.length+" passages";
-  }else assign(position);
+  if(position>=records.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+records.length+" passages";}
+  else assign(position);
  }
  requestAnimationFrame(frame);
 }
@@ -187,6 +194,7 @@ function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
  center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
+ legs.forEach(leg=>{leg.planted=baseFoot(leg);leg.goal=null;});
  viewport.scrollTo({top:0,behavior:"instant"});
  if(records.length)assign(0);
 }
