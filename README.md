@@ -2,6 +2,12 @@
 
 A Streamlit app that finds financial keywords in **public SEC company reports** or in **PDF files you upload**. The spider animates a tour through detected terms. Analysis is performed before the animation begins.
 
+## Try the live app
+
+**Live demo (Streamlit Community Cloud):** https://wall-street-web-crawler-h2lubtjvapebqhgglspbg8.streamlit.app/
+
+Open the link in your browser to try the app without installing Python. You can analyze a public SEC filing or upload a text-based PDF. The live deployment may take a moment to wake up after inactivity.
+
 ## What does the app search?
 
 **Option 1 — Find a company report (SEC):** Enter a US stock symbol (ticker) such as `AAPL` (Apple), `MSFT` (Microsoft), or `NVDA` (NVIDIA). The app retrieves the company's latest available report from SEC EDGAR:
