@@ -99,7 +99,7 @@ const findings=prepared.flatMap((p,i)=>{
  return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
 });
 let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now();
-const STEP_MS=115,SHIFT_MS=85,PAUSE_MS=100,STEP_DISTANCE=26;
+const STEP_MS=58,SHIFT_MS=43,PAUSE_MS=50,STEP_DISTANCE=26;
 const order=[0,5,2,7,4,1,6,3];
 let phase="idle",elapsed=0,stepNumber=0,activeLeg=0;
 let destination=null,from={...center},to={...center},footFrom=null,footTo=null,target=null;
