@@ -90,33 +90,36 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
  joint.setAttribute("r","2.5");foot.setAttribute("r","3");
  legs.push({side,i,path,joint,foot,goal:null,contact:false});
 }
-// Complete all keyword extraction before the first animation frame.
+// Prepare findings once. Visit a few representative keywords per passage.
 const prepared=records.map((r,i)=>({marks:prepare(i),category:r.category}));
-const findings=prepared.flatMap((p,i)=>p.marks.map(mark=>({mark,category:p.category,passage:i})));
-let center={x:paper.clientWidth/2,y:140},position=0,playing=true,last=performance.now(),linked={};
-const STEP_MS=115,BODY_MS=150,REST_MS=12;
-let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null;
+const findings=prepared.flatMap((p,i)=>{
+ const marks=p.marks;
+ if(!marks.length)return [];
+ const picks=[marks[0],marks[Math.floor((marks.length-1)/2)],marks[marks.length-1]];
+ return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
+});
+let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
+const FOOT_MS=340,BODY_MS=430,REST_MS=100;
+let phase="foot",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null;
 const order=[0,4,1,5,2,6,3,7];
 function baseFoot(leg,origin=center){
- const angle=[-1.1,-.35,.35,1.1][leg.i];
- return {x:origin.x+leg.side*(130+Math.cos(angle)*25),y:origin.y+angle*110};
+ const angle=[-1.15,-.4,.4,1.15][leg.i];
+ return {x:origin.x+leg.side*(140+Math.cos(angle)*35),y:origin.y+angle*120};
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
 function assign(i){
  if(i>=findings.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+findings.length+" findings";return;}
  target=findings[i];const dest=point(target.mark);
+ activeLeg=order[i%order.length];
+ const leg=legs[activeLeg];
+ const side=leg.side;
+ // Put the body near the word, not directly on top of it.
+ to={x:Math.max(85,Math.min(paper.clientWidth-85,dest.x-side*92)),y:dest.y+20};
  from={...center};
- // Crawl directly to the NEXT highlighted word, not a passage average.
- // The body stops beside it so the active foot can touch the exact word.
- const side=dest.x>=center.x?1:-1;
- to={x:Math.max(70,Math.min(paper.clientWidth-70,dest.x-side*70)),y:dest.y+12};
- // One leg is designated for this finding; all others stay planted.
- const candidates=legs.map((leg,n)=>({leg,n,score:distance(baseFoot(leg,to),dest)+(leg.side===side?0:170)}));
- candidates.sort((a,b)=>a.score-b.score);
- activeLeg=candidates[0].n;
- legs.forEach((leg,n)=>{leg.goal=n===activeLeg?target:null;});
- phase="body";elapsed=0;
- counter.textContent="Scanning "+(i+1)+" / "+findings.length+" findings";
+ footStart=baseFoot(leg,center);
+ footEnd={...dest};
+ phase="foot";elapsed=0;
+ counter.textContent="Finding "+(i+1)+" / "+findings.length;
  status.textContent=target.category+" · "+target.mark.textContent;
 }
 function connect(mark,category){
@@ -134,46 +137,48 @@ function reveal(mark,category){
 function frame(now){
  const delta=Math.min(45,now-last);last=now;
  if(playing&&findings.length)elapsed+=delta;
+ const smooth=t=>t*t*(3-2*t);
  if(phase==="body"){
-  const t=Math.min(1,elapsed/BODY_MS),s=t*t*(3-2*t);
-  center={x:from.x+(to.x-from.x)*s,y:from.y+(to.y-from.y)*s};
-  if(t>=1&&playing){phase="leg";elapsed=0;}
+  const t=smooth(Math.min(1,elapsed/BODY_MS));
+  center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
+  if(playing&&elapsed>=BODY_MS){phase="rest";elapsed=0;}
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
+ // Camera follows smoothly without jumping ahead of the spider.
  if(playing){
-  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.48);
-  if(Math.abs(viewport.scrollTop-wanted)>12)viewport.scrollTop+=(wanted-viewport.scrollTop)*.22;
+  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.5);
+  viewport.scrollTop+=(wanted-viewport.scrollTop)*.12;
  }
  legs.forEach((leg,n)=>{
-  const hip={x:center.x+leg.side*11,y:center.y+(leg.i-1.5)*7};
-  // Idle legs follow the body with a stable resting stance; no stale coordinates.
-  const rest=baseFoot(leg);
-  let foot={...rest};
-  if(phase==="leg"&&n===activeLeg&&target){
-   const t=Math.min(1,elapsed/STEP_MS),s=t*t*(3-2*t);
-   const dest=point(target.mark);
-   foot={x:rest.x+(dest.x-rest.x)*s,y:rest.y+(dest.y-rest.y)*s-Math.sin(Math.PI*t)*19};
+  const hip={x:center.x+leg.side*12,y:center.y+(leg.i-1.5)*8};
+  let foot=baseFoot(leg);
+  if(n===activeLeg&&target){
+   if(phase==="foot"){
+    const t=Math.min(1,elapsed/FOOT_MS),s=smooth(t);
+    foot={x:footStart.x+(footEnd.x-footStart.x)*s,
+          y:footStart.y+(footEnd.y-footStart.y)*s-Math.sin(Math.PI*t)*25};
+   }else if(phase==="body"){
+    // The foot is planted on the highlighted word while the body crawls toward it.
+    foot={...footEnd};
+   }
   }
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.52+leg.side*38,y:hip.y+dy*.52-20};
+  const knee={x:hip.x+dx*.48+leg.side*48,y:hip.y+dy*.48-24};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
- if(playing&&phase==="leg"&&elapsed>=STEP_MS){
-  // The next leg cannot move until this one has reached its exact target.
+ if(playing&&phase==="foot"&&elapsed>=FOOT_MS){
   reveal(target.mark,target.category);
-  phase="rest";elapsed=0;
+  phase="body";elapsed=0;
  }
- if(playing&&phase==="rest"&&elapsed>=REST_MS){
-  position++;assign(position);
- }
+ if(playing&&phase==="rest"&&elapsed>=REST_MS){position++;assign(position);}
  requestAnimationFrame(frame);
 }
 function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
- center={x:paper.clientWidth/2,y:140};from={...center};to={...center};
+ center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
  viewport.scrollTo({top:0,behavior:"instant"});
  if(findings.length)assign(0);
 }
