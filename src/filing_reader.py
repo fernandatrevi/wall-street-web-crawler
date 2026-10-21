@@ -99,39 +99,34 @@ const findings=prepared.flatMap((p,i)=>{
  return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
 });
 let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const FOOT_MS=360,BODY_MS=430,REST_MS=130;
-let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null,bodyDuration=BODY_MS;
+const FOOT_MS=280,BODY_MS=280,REST_MS=65,MAX_HOP=95;
+let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null,bodyDuration=BODY_MS,finalDestination=null;
 const order=[0,4,1,5,2,6,3,7];
 function baseFoot(leg,origin=center){
  const angle=[-1.15,-.4,.4,1.15][leg.i];
  return {x:origin.x+leg.side*(140+Math.cos(angle)*35),y:origin.y+angle*120};
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function nextHop(){
+ const remaining=distance(center,finalDestination);
+ const ratio=Math.min(1,MAX_HOP/Math.max(1,remaining));
+ from={...center};
+ to={x:center.x+(finalDestination.x-center.x)*ratio,y:center.y+(finalDestination.y-center.y)*ratio};
+ bodyDuration=BODY_MS;phase="body";elapsed=0;
+}
 function assign(i){
  if(i>=findings.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+findings.length+" findings";return;}
- target=findings[i];const dest=point(target.mark);
+ target=findings[i];
+ const dest=point(target.mark);
+ // Approach the finding in short visible steps, rather than one giant leap.
+ finalDestination={x:Math.max(110,Math.min(paper.clientWidth-110,dest.x)),y:dest.y+48};
  activeLeg=order[i%order.length];
- const leg=legs[activeLeg];
- const side=leg.side;
- // Put the body near the word, not directly on top of it.
- to={x:Math.max(85,Math.min(paper.clientWidth-85,dest.x-side*92)),y:dest.y+20};
- from={...center};
- footStart=baseFoot(leg,center);
  footEnd={...dest};
- bodyDuration=Math.max(BODY_MS,Math.min(1500,distance(from,to)*1.5));
- phase="body";elapsed=0;
+ nextHop();
  counter.textContent="Finding "+(i+1)+" / "+findings.length;
  status.textContent=target.category+" · "+target.mark.textContent;
 }
-function connect(mark,category){
- // Keep the report readable: do not draw long links across distant passages.
- if(linked[category]&&Math.abs(point(linked[category]).y-point(mark).y)<100){
-  const a=point(linked[category]),b=point(mark),curve=make("path",lines);
-  curve.setAttribute("d","M"+a.x+" "+a.y+" Q"+(a.x+b.x)/2+" "+(Math.min(a.y,b.y)-35)+" "+b.x+" "+b.y);
-  curve.setAttribute("stroke",palette[category]||"#ff68ba");
- }
- linked[category]=mark;
-}
+function connect(mark,category){linked[category]=mark;}
 function reveal(mark,category){
  if(mark.classList.contains("found"))return;
  mark.classList.add("found");connect(mark,category);
@@ -143,12 +138,16 @@ function frame(now){
  if(phase==="body"){
   const t=smooth(Math.min(1,elapsed/bodyDuration));
   center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
-  if(playing&&elapsed>=bodyDuration){phase="foot";elapsed=0;footStart=baseFoot(legs[activeLeg]);}
+  if(playing&&elapsed>=bodyDuration){
+   if(distance(center,finalDestination)>2)nextHop();
+   else{phase="foot";elapsed=0;footStart=baseFoot(legs[activeLeg]);}
+  }
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
  // Camera follows smoothly without jumping ahead of the spider.
  if(playing){
-  const wanted=Math.max(0,Math.min(viewport.scrollHeight-viewport.clientHeight,center.y+paper.offsetTop-viewport.clientHeight*.5));
+  const wanted=Math.max(0,Math.min(viewport.scrollHeight-viewport.clientHeight,
+    center.y+paper.offsetTop-viewport.clientHeight*.48));
   // Synchronize the camera with the spider every frame.
   viewport.scrollTop=wanted;
  }
