@@ -51,6 +51,38 @@ python -m pytest -q
 - `src/filing_reader.py`: animated spider and highlighted reader
 - `tests/`: validation and analyzer tests
 
+## Technology stack and spider animation
+
+This project combines **Python for financial document analysis** with **JavaScript and SVG for the animated spider**:
+
+- **Python** handles SEC report retrieval, PDF text extraction, and financial keyword matching.
+- **Streamlit** provides the web interface and embeds the document reader.
+- **JavaScript** drives the spider's movement, including sequential leg steps, timing, and document scrolling.
+- **SVG** draws the spider's body, eight articulated legs, and joints.
+
+GitHub may report **Python 100%** because the JavaScript, HTML, and SVG are currently embedded as a string inside `src/filing_reader.py`. GitHub's language breakdown does **not** mean Python animates the spider.
+
+### How the spider moves
+
+The spider visits selected financial keyword matches in the reconstructed document. Its gait is designed to lift **one leg at a time**, bend that leg at the knee, keep the other feet planted during the step, and advance the body in short increments. The reader scrolls to follow the spider, and matched words are highlighted on arrival. The animation is a visualization of precomputed keyword findings, **not an autonomous web-crawling agent**.
+
+### Why JavaScript instead of R?
+
+**R** is valuable for statistics and data visualization, but **JavaScript + SVG** is better suited to precise, interactive animation inside a browser. Python remains responsible for analysis; changing the animation does not require rewriting the analysis in R.
+
+### Potential frontend improvements
+
+The animation is **currently embedded** in `src/filing_reader.py`; the following structure is a **proposed refactor, not yet implemented**:
+
+```text
+frontend/
+  spider.js     # gait and scroll animation
+  spider.css    # spider and reader styles
+  spider.svg    # reusable spider drawing
+```
+
+Separating these files would make animation work easier to test and contribute to. A library such as **GSAP** could be evaluated for smoother timing later; **GSAP is not currently a dependency**.
+
 ## Financial categories
 
 Revenue, Competition, Debt & financing, Research & development, Risk, Shares.
