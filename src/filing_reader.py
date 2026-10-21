@@ -99,9 +99,10 @@ const findings=prepared.flatMap((p,i)=>{
  return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
 });
 let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const FOOT_MS=280,BODY_MS=280,REST_MS=65,MAX_HOP=95;
+const FOOT_MS=210,BODY_MS=140,REST_MS=30,MAX_HOP=42;
 let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null,bodyDuration=BODY_MS,finalDestination=null;
 const order=[0,4,1,5,2,6,3,7];
+let stepNumber=0,footFrom=null,footTo=null;
 function baseFoot(leg,origin=center){
  const angle=[-1.15,-.4,.4,1.15][leg.i];
  return {x:origin.x+leg.side*(140+Math.cos(angle)*35),y:origin.y+angle*120};
@@ -112,7 +113,11 @@ function nextHop(){
  const ratio=Math.min(1,MAX_HOP/Math.max(1,remaining));
  from={...center};
  to={x:center.x+(finalDestination.x-center.x)*ratio,y:center.y+(finalDestination.y-center.y)*ratio};
- bodyDuration=BODY_MS;phase="body";elapsed=0;
+ bodyDuration=BODY_MS;phase="foot";elapsed=0;
+ activeLeg=order[stepNumber%order.length];
+ const leg=legs[activeLeg];
+ footFrom=leg.planted||baseFoot(leg);
+ footTo=baseFoot(leg,to);
 }
 function assign(i){
  if(i>=findings.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+findings.length+" findings";return;}
@@ -120,7 +125,7 @@ function assign(i){
  const dest=point(target.mark);
  // Approach the finding in short visible steps, rather than one giant leap.
  finalDestination={x:Math.max(110,Math.min(paper.clientWidth-110,dest.x)),y:dest.y+48};
- activeLeg=order[i%order.length];
+ activeLeg=order[stepNumber%order.length];
  footEnd={...dest};
  nextHop();
  counter.textContent="Finding "+(i+1)+" / "+findings.length;
@@ -139,8 +144,9 @@ function frame(now){
   const t=smooth(Math.min(1,elapsed/bodyDuration));
   center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
   if(playing&&elapsed>=bodyDuration){
+   stepNumber++;
    if(distance(center,finalDestination)>2)nextHop();
-   else{phase="foot";elapsed=0;footStart=baseFoot(legs[activeLeg]);}
+   else{reveal(target.mark,target.category);phase="rest";elapsed=0;}
   }
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
@@ -153,23 +159,24 @@ function frame(now){
  }
  legs.forEach((leg,n)=>{
   const hip={x:center.x+leg.side*12,y:center.y+(leg.i-1.5)*8};
-  let foot=baseFoot(leg);
+  let foot=leg.planted||baseFoot(leg);
   if(n===activeLeg&&target){
    if(phase==="foot"){
     const t=Math.min(1,elapsed/FOOT_MS),s=smooth(t);
-    foot={x:footStart.x+(footEnd.x-footStart.x)*s,
-          y:footStart.y+(footEnd.y-footStart.y)*s-Math.sin(Math.PI*t)*25};
+    foot={x:footFrom.x+(footTo.x-footFrom.x)*s+(hip.x-(footFrom.x+footTo.x)/2)*Math.sin(Math.PI*t)*.18,
+          y:footFrom.y+(footTo.y-footFrom.y)*s-Math.sin(Math.PI*t)*22};
    }
   }
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.48+leg.side*48,y:hip.y+dy*.48-24};
+  const bend=phase==="foot"&&n===activeLeg?Math.sin(Math.PI*Math.min(1,elapsed/FOOT_MS))*20:0;
+  const knee={x:hip.x+dx*.48+leg.side*(28+bend),y:hip.y+dy*.48-18-bend*.3};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
  if(playing&&phase==="foot"&&elapsed>=FOOT_MS){
-  reveal(target.mark,target.category);
-  phase="rest";elapsed=0;
+  legs[activeLeg].planted={...footTo};
+  phase="body";elapsed=0;
  }
  if(playing&&phase==="rest"&&elapsed>=REST_MS){position++;assign(position);}
  requestAnimationFrame(frame);
@@ -177,7 +184,8 @@ function frame(now){
 function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
- center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
+ center={x:paper.clientWidth/2,y:180};from={...center};to={...center};stepNumber=0;
+ legs.forEach(leg=>leg.planted=baseFoot(leg));
  viewport.scrollTop=0;
  if(findings.length)assign(0);
 }
