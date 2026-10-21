@@ -98,98 +98,106 @@ const findings=prepared.flatMap((p,i)=>{
  const picks=[marks[0],marks[Math.floor((marks.length-1)/2)],marks[marks.length-1]];
  return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
 });
-let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const FOOT_MS=210,BODY_MS=140,REST_MS=30,MAX_HOP=42;
-let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null,bodyDuration=BODY_MS,finalDestination=null;
-const order=[0,4,1,5,2,6,3,7];
-let stepNumber=0,footFrom=null,footTo=null;
+let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now();
+const STEP_MS=230,SHIFT_MS=165,PAUSE_MS=200,STEP_DISTANCE=18;
+const order=[0,5,2,7,4,1,6,3];
+let phase="idle",elapsed=0,stepNumber=0,activeLeg=0;
+let destination=null,from={...center},to={...center},footFrom=null,footTo=null,target=null;
+const ease=t=>t*t*(3-2*t);
+const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 function baseFoot(leg,origin=center){
- const angle=[-1.15,-.4,.4,1.15][leg.i];
- return {x:origin.x+leg.side*(140+Math.cos(angle)*35),y:origin.y+angle*120};
+ const offsets=[-62,-22,22,62];
+ return {x:origin.x+leg.side*(67+(leg.i===0||leg.i===3?10:22)),
+         y:origin.y+offsets[leg.i]};
 }
-function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
-function nextHop(){
- const remaining=distance(center,finalDestination);
- const ratio=Math.min(1,MAX_HOP/Math.max(1,remaining));
+function startStep(){
+ if(!destination)return;
+ const d=distance(center,destination);
+ if(d<3){arrive();return;}
+ const fraction=Math.min(1,STEP_DISTANCE/d);
  from={...center};
- to={x:center.x+(finalDestination.x-center.x)*ratio,y:center.y+(finalDestination.y-center.y)*ratio};
- bodyDuration=BODY_MS;phase="foot";elapsed=0;
+ to={x:center.x+(destination.x-center.x)*fraction,
+     y:center.y+(destination.y-center.y)*fraction};
  activeLeg=order[stepNumber%order.length];
  const leg=legs[activeLeg];
- footFrom=leg.planted||baseFoot(leg);
+ footFrom={...leg.planted};
  footTo=baseFoot(leg,to);
+ // Never allow a foot to jump across the document in one frame.
+ const stride=distance(footFrom,footTo);
+ if(stride>58){
+  footTo={x:footFrom.x+(footTo.x-footFrom.x)*58/stride,
+          y:footFrom.y+(footTo.y-footFrom.y)*58/stride};
+ }
+ phase="lift";elapsed=0;
 }
 function assign(i){
- if(i>=findings.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+findings.length+" findings";return;}
+ if(i>=findings.length){
+  playing=false;phase="complete";play.textContent="Replay";
+  counter.textContent="Complete · "+findings.length+" findings";return;
+ }
  target=findings[i];
- const dest=point(target.mark);
- // Approach the finding in short visible steps, rather than one giant leap.
- finalDestination={x:Math.max(110,Math.min(paper.clientWidth-110,dest.x)),y:dest.y+48};
- activeLeg=order[stepNumber%order.length];
- footEnd={...dest};
- nextHop();
+ const p=point(target.mark);
+ destination={x:Math.max(115,Math.min(paper.clientWidth-115,p.x)),y:p.y+48};
  counter.textContent="Finding "+(i+1)+" / "+findings.length;
  status.textContent=target.category+" · "+target.mark.textContent;
+ startStep();
 }
-function connect(mark,category){linked[category]=mark;}
-function reveal(mark,category){
- if(mark.classList.contains("found"))return;
- mark.classList.add("found");connect(mark,category);
+function arrive(){
+ if(target)target.mark.classList.add("found");
+ phase="pause";elapsed=0;
 }
 function frame(now){
- const delta=Math.min(45,now-last);last=now;
- if(playing&&findings.length)elapsed+=delta;
- const smooth=t=>t*t*(3-2*t);
- if(phase==="body"){
-  const t=smooth(Math.min(1,elapsed/bodyDuration));
+ const dt=Math.min(40,Math.max(0,now-last));last=now;
+ if(playing)elapsed+=dt;
+ if(playing&&phase==="lift"&&elapsed>=STEP_MS){
+  legs[activeLeg].planted={...footTo};
+  phase="shift";elapsed=0;
+ }
+ if(phase==="shift"){
+  const t=ease(Math.min(1,elapsed/SHIFT_MS));
   center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
-  if(playing&&elapsed>=bodyDuration){
-   stepNumber++;
-   if(distance(center,finalDestination)>2)nextHop();
-   else{reveal(target.mark,target.category);phase="rest";elapsed=0;}
+  if(playing&&elapsed>=SHIFT_MS){
+   center={...to};stepNumber++;startStep();
   }
  }
+ if(playing&&phase==="pause"&&elapsed>=PAUSE_MS){position++;assign(position);}
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
- // Camera follows smoothly without jumping ahead of the spider.
- if(playing){
-  const wanted=Math.max(0,Math.min(viewport.scrollHeight-viewport.clientHeight,
-    center.y+paper.offsetTop-viewport.clientHeight*.48));
-  // Synchronize the camera with the spider every frame.
-  viewport.scrollTop=wanted;
- }
  legs.forEach((leg,n)=>{
-  const hip={x:center.x+leg.side*12,y:center.y+(leg.i-1.5)*8};
-  let foot=leg.planted||baseFoot(leg);
-  if(n===activeLeg&&target){
-   if(phase==="foot"){
-    const t=Math.min(1,elapsed/FOOT_MS),s=smooth(t);
-    foot={x:footFrom.x+(footTo.x-footFrom.x)*s+(hip.x-(footFrom.x+footTo.x)/2)*Math.sin(Math.PI*t)*.18,
-          y:footFrom.y+(footTo.y-footFrom.y)*s-Math.sin(Math.PI*t)*22};
-   }
+  const hip={x:center.x+leg.side*12,y:center.y+(leg.i-1.5)*7};
+  let foot=leg.planted;
+  let lift=0;
+  if(n===activeLeg&&phase==="lift"){
+   const t=Math.min(1,elapsed/STEP_MS),k=ease(t);
+   lift=Math.sin(Math.PI*t)*18;
+   foot={x:footFrom.x+(footTo.x-footFrom.x)*k,
+         y:footFrom.y+(footTo.y-footFrom.y)*k-lift};
   }
-  const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const bend=phase==="foot"&&n===activeLeg?Math.sin(Math.PI*Math.min(1,elapsed/FOOT_MS))*20:0;
-  const knee={x:hip.x+dx*.48+leg.side*(28+bend),y:hip.y+dy*.48-18-bend*.3};
+  // Knee bends independently; feet of the seven other legs remain planted.
+  const knee={x:hip.x+(foot.x-hip.x)*.50+leg.side*(20+lift*.45),
+              y:hip.y+(foot.y-hip.y)*.50-15-lift*.5};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
- if(playing&&phase==="foot"&&elapsed>=FOOT_MS){
-  legs[activeLeg].planted={...footTo};
-  phase="body";elapsed=0;
+ if(playing){
+  const desired=Math.max(0,Math.min(viewport.scrollHeight-viewport.clientHeight,
+    center.y+paper.offsetTop-viewport.clientHeight*.48));
+  viewport.scrollTop=desired;
  }
- if(playing&&phase==="rest"&&elapsed>=REST_MS){position++;assign(position);}
  requestAnimationFrame(frame);
 }
 function reset(){
- position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
+ position=0;playing=true;play.textContent="Pause";stepNumber=0;
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
- center={x:paper.clientWidth/2,y:180};from={...center};to={...center};stepNumber=0;
- legs.forEach(leg=>leg.planted=baseFoot(leg));
+ center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
+ legs.forEach(leg=>{leg.planted=baseFoot(leg);});
  viewport.scrollTop=0;
  if(findings.length)assign(0);
 }
-play.onclick=()=>{if(position>=findings.length)reset();else{playing=!playing;play.textContent=playing?"Pause":"Play";}};
+play.onclick=()=>{
+ if(phase==="complete")reset();
+ else{playing=!playing;play.textContent=playing?"Pause":"Play";}
+};
 document.getElementById("restart").onclick=reset;
 if(findings.length)reset();else{counter.textContent="No matches";play.disabled=true;}
 requestAnimationFrame(frame);
