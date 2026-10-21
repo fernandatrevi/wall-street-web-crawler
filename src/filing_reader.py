@@ -41,7 +41,7 @@ mark{color:inherit;background:transparent;border-radius:1px;padding:0 1px;transi
 <div class="viewport" id="viewport"><article class="paper" id="paper">
 <div class="heading">FINANCIAL FILING · DOCUMENT SCAN</div>
 <div class="subheading">Extracted SEC filing passages · highlights appear as the spider visits each finding</div>
-<div id="passages"></div><svg class="overlay" id="lines" aria-hidden="true"></svg><svg class="spider" id="spider" aria-label="Eight articulated spider legs point at financial terms"><g id="legs"></g><g id="spiderBody"><ellipse class="body" rx="8" ry="12"/><circle cx="-3" cy="-5" r="1.8" fill="#ffe066"/><circle cx="3" cy="-5" r="1.8" fill="#ffe066"/></g></svg>
+<div id="passages"></div><svg class="overlay" id="lines" aria-hidden="true"></svg><svg class="spider" id="spider" aria-label="Eight articulated spider legs point at financial terms"><g id="legs"></g><g id="spiderBody"><rect class="body" x="-12" y="-15" width="24" height="30" rx="1.5"/><rect x="-7" y="6" width="14" height="8" fill="#ff4a9e"/><circle cx="0" cy="11" r="3" fill="#ff9ccd"/></g></svg>
 </article></div><div class="status" id="status">Scanning the report for financial topics</div>
 <script>
 const records=__DATA__;
@@ -90,45 +90,34 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
  joint.setAttribute("r","2.5");foot.setAttribute("r","3");
  legs.push({side,i,path,joint,foot,goal:null,contact:false});
 }
-// Analyze and lay out every keyword BEFORE starting the animation.
-const prepared=records.map((r,i)=>{
- const marks=prepare(i);
- return {marks,category:r.category};
-});
-// All keywords are extracted and laid out before playback.
-let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const STEP_MS=135, BODY_MS=120, REST_MS=15, MAX_REACH=210;
-let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center};
-const order=[0,4,1,5,2,6,3,7]; // one foot at a time, alternating sides
+// Complete all keyword extraction before the first animation frame.
+const prepared=records.map((r,i)=>({marks:prepare(i),category:r.category}));
+const findings=prepared.flatMap((p,i)=>p.marks.map(mark=>({mark,category:p.category,passage:i})));
+let center={x:paper.clientWidth/2,y:140},position=0,playing=true,last=performance.now(),linked={};
+const STEP_MS=115,BODY_MS=150,REST_MS=12;
+let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null;
+const order=[0,4,1,5,2,6,3,7];
 function baseFoot(leg,origin=center){
- const angle=[-1.05,-.35,.35,1.05][leg.i];
- return {x:origin.x+leg.side*(135+Math.cos(angle)*25),y:origin.y+angle*115};
+ const angle=[-1.1,-.35,.35,1.1][leg.i];
+ return {x:origin.x+leg.side*(130+Math.cos(angle)*25),y:origin.y+angle*110};
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
-function clampReach(hip,point,reach=MAX_REACH){
- const d=distance(hip,point);if(d<=reach)return {...point};
- const s=reach/d;return {x:hip.x+(point.x-hip.x)*s,y:hip.y+(point.y-hip.y)*s};
-}
 function assign(i){
- const marks=prepared[i].marks;
- // Scroll follows the spider after its body arrives, not the paragraph.
- const locations=marks.map(mark=>({mark,pt:point(mark)}));
- if(!locations.length){position++;if(position<records.length)return assign(position);playing=false;return;}
- const avg=locations.reduce((a,o)=>({x:a.x+o.pt.x,y:a.y+o.pt.y}),{x:0,y:0});
- avg.x/=locations.length;avg.y/=locations.length;
+ if(i>=findings.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+findings.length+" findings";return;}
+ target=findings[i];const dest=point(target.mark);
  from={...center};
- // No body teleportation: move toward nearby words by a bounded distance.
- to=clampReach(from,{x:avg.x,y:avg.y+18},115);
- const left=locations.filter(o=>o.pt.x<=to.x).sort((a,b)=>a.pt.y-b.pt.y);
- const right=locations.filter(o=>o.pt.x>to.x).sort((a,b)=>a.pt.y-b.pt.y);
- legs.forEach(leg=>{
-  const pool=leg.side<0?left:right;
-  leg.goal=pool.length?pool[Math.min(pool.length-1,Math.round(leg.i*(pool.length-1)/3))]:null;
-  leg.landed=false;
- });
- phase="body";elapsed=0;activeLeg=0;
- counter.textContent="Scanning "+(i+1)+" / "+records.length+" passages";
- status.textContent=records[i].category+" · "+records[i].keywords;
+ // Crawl directly to the NEXT highlighted word, not a passage average.
+ // The body stops beside it so the active foot can touch the exact word.
+ const side=dest.x>=center.x?1:-1;
+ to={x:Math.max(70,Math.min(paper.clientWidth-70,dest.x-side*70)),y:dest.y+12};
+ // One leg is designated for this finding; all others stay planted.
+ const candidates=legs.map((leg,n)=>({leg,n,score:distance(baseFoot(leg,to),dest)+(leg.side===side?0:170)}));
+ candidates.sort((a,b)=>a.score-b.score);
+ activeLeg=candidates[0].n;
+ legs.forEach((leg,n)=>{leg.goal=n===activeLeg?target:null;});
+ phase="body";elapsed=0;
+ counter.textContent="Scanning "+(i+1)+" / "+findings.length+" findings";
+ status.textContent=target.category+" · "+target.mark.textContent;
 }
 function connect(mark,category){
  if(linked[category]){
@@ -143,69 +132,54 @@ function reveal(mark,category){
  mark.classList.add("found");connect(mark,category);
 }
 function frame(now){
- const delta=Math.min(40,now-last);last=now;
- if(playing&&records.length)elapsed+=delta;
+ const delta=Math.min(45,now-last);last=now;
+ if(playing&&findings.length)elapsed+=delta;
  if(phase==="body"){
-  const t=Math.min(1,elapsed/BODY_MS),ease=t*t*(3-2*t);
-  center={x:from.x+(to.x-from.x)*ease,y:from.y+(to.y-from.y)*ease};
-  if(t>=1&&playing){phase="legs";elapsed=0;activeLeg=0;}
+  const t=Math.min(1,elapsed/BODY_MS),s=t*t*(3-2*t);
+  center={x:from.x+(to.x-from.x)*s,y:from.y+(to.y-from.y)*s};
+  if(t>=1&&playing){phase="leg";elapsed=0;}
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
- // Keep the spider inside the visible document viewport while scanning.
  if(playing){
-  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.52);
-  if(Math.abs(viewport.scrollTop-wanted)>35)viewport.scrollTop=wanted;
+  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.48);
+  if(Math.abs(viewport.scrollTop-wanted)>12)viewport.scrollTop+=(wanted-viewport.scrollTop)*.22;
  }
- const movingIndex=phase==="legs"?order[activeLeg]:-1;
  legs.forEach((leg,n)=>{
-  const hip={x:center.x+leg.side*8,y:center.y+(leg.i-1.5)*7};
-  // Planted feet stay fixed while the body crawls forward.
-  if(!leg.planted)leg.planted=baseFoot(leg);
-  let foot={...leg.planted};
-  if(n===movingIndex){
-   const t=Math.min(1,elapsed/STEP_MS),ease=t*t*(3-2*t);
-   const desired=leg.goal?point(leg.goal.mark):baseFoot(leg);
-   const target=clampReach(hip,desired);
-   foot={x:leg.planted.x+(target.x-leg.planted.x)*ease,
-         y:leg.planted.y+(target.y-leg.planted.y)*ease-Math.sin(Math.PI*t)*22};
+  const hip={x:center.x+leg.side*11,y:center.y+(leg.i-1.5)*7};
+  // Idle legs follow the body with a stable resting stance; no stale coordinates.
+  const rest=baseFoot(leg);
+  let foot={...rest};
+  if(phase==="leg"&&n===activeLeg&&target){
+   const t=Math.min(1,elapsed/STEP_MS),s=t*t*(3-2*t);
+   const dest=point(target.mark);
+   foot={x:rest.x+(dest.x-rest.x)*s,y:rest.y+(dest.y-rest.y)*s-Math.sin(Math.PI*t)*19};
   }
-  // Outward-bending knee: keep every limb on its own side.
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.5+leg.side*30,y:hip.y+dy*.5-20};
+  const knee={x:hip.x+dx*.52+leg.side*38,y:hip.y+dy*.52-20};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
- if(playing&&phase==="legs"&&elapsed>=STEP_MS){
-  const leg=legs[order[activeLeg]];
-  const hip={x:center.x+leg.side*8,y:center.y+(leg.i-1.5)*7};
-  const target=leg.goal?point(leg.goal.mark):baseFoot(leg);
-  leg.planted=clampReach(hip,target);
-  // Highlight only if the foot actually reaches the word.
-  if(leg.goal&&distance(leg.planted,target)<4)reveal(leg.goal.mark,records[position].category);
-  activeLeg++;elapsed=0;
-  if(activeLeg>=order.length)phase="rest";
+ if(playing&&phase==="leg"&&elapsed>=STEP_MS){
+  // The next leg cannot move until this one has reached its exact target.
+  reveal(target.mark,target.category);
+  phase="rest";elapsed=0;
  }
  if(playing&&phase==="rest"&&elapsed>=REST_MS){
-  // The analysis is already complete; reveal remaining matched words.
-  prepared[position].marks.forEach(m=>reveal(m,records[position].category));
-  position++;
-  if(position>=records.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+records.length+" passages";}
-  else assign(position);
+  position++;assign(position);
  }
  requestAnimationFrame(frame);
 }
 function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
- center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
- legs.forEach(leg=>{leg.planted=baseFoot(leg);leg.goal=null;});
+ center={x:paper.clientWidth/2,y:140};from={...center};to={...center};
  viewport.scrollTo({top:0,behavior:"instant"});
- if(records.length)assign(0);
+ if(findings.length)assign(0);
 }
-play.onclick=()=>{if(position>=records.length)reset();else{playing=!playing;play.textContent=playing?"Pause":"Play";}};
+play.onclick=()=>{if(position>=findings.length)reset();else{playing=!playing;play.textContent=playing?"Pause":"Play";}};
 document.getElementById("restart").onclick=reset;
-if(records.length)reset();else{counter.textContent="No matches";play.disabled=true;}
+if(findings.length)reset();else{counter.textContent="No matches";play.disabled=true;}
 requestAnimationFrame(frame);
 </script></body></html>"""
     components.html(template.replace("__DATA__", payload), height=height, scrolling=False)
