@@ -91,7 +91,7 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
  legs.push({side,i,path,joint,foot,goal:null,contact:false});
 }
 let center={x:350,y:220},from={...center},to={...center};
-let stepStart=performance.now(),duration=2300,position=0,playing=true,elapsed=0,last=performance.now();
+let stepStart=performance.now(),duration=680,position=0,playing=true,elapsed=0,last=performance.now();
 let targets=[],linked={};
 function assign(i){
  const e=entries[i],marks=prepare(i);
@@ -104,7 +104,13 @@ function assign(i){
  to={x:Math.max(75,Math.min(paper.clientWidth-75,avg.x)),y:avg.y+26};
  // Each leg gets a different word; if there are fewer than 8 words,
  // remaining legs plant around the body rather than converging to one point.
- targets=locations.slice(0,8);
+ // Spread the eight legs across the full line width, including both edges.
+ const sorted=[...locations].sort((a,b)=>a.pt.x-b.pt.x);
+ targets=[];
+ for(let n=0;n<Math.min(8,sorted.length);n++){
+  const idx=sorted.length===1?0:Math.round(n*(sorted.length-1)/(Math.min(8,sorted.length)-1));
+  targets.push(sorted[idx]);
+ }
  legs.forEach((leg,n)=>{leg.goal=targets[n]||null;leg.contact=false;});
  counter.textContent="Scanning "+(i+1)+" / "+records.length+" passages";
  status.textContent=records[i].category+" · "+records[i].keywords;
@@ -137,16 +143,16 @@ function frame(now){
    const p=point(leg.goal.mark);
    const distance=Math.hypot(p.x-hip.x,p.y-hip.y);
    // Reach the actual highlighted term if close; otherwise extend toward it.
-   const factor=Math.min(1,200/Math.max(1,distance));
+   const factor=1; // Reach every matched word, including the document edges.
    foot={x:hip.x+(p.x-hip.x)*factor,y:hip.y+(p.y-hip.y)*factor};
-   if(t>.55&&!leg.contact&&factor===1){reveal(leg.goal.mark,records[position].category);leg.contact=true;}
+   if(t>.42&&!leg.contact){reveal(leg.goal.mark,records[position].category);leg.contact=true;}
   }else{
    foot={x:center.x+side*(110+Math.cos(angle)*20),y:center.y+angle*105};
   }
   const walk=playing&&t<1?Math.sin(phase)*8:0;
   const lift=playing&&t<1?Math.max(0,Math.cos(phase))*7:0;
-  if(!leg.contact){foot.x+=walk;foot.y-=lift;}
-  const knee={x:hip.x+(foot.x-hip.x)*.58+side*24,y:hip.y+(foot.y-hip.y)*.52-16};
+  if(!leg.contact){foot.x+=walk*(1-t);foot.y-=lift*(1-t);}
+  const knee={x:hip.x+(foot.x-hip.x)*.58+side*35,y:hip.y+(foot.y-hip.y)*.52-22};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
