@@ -154,10 +154,20 @@ function frame(now){
   phase="shift";elapsed=0;
  }
  if(phase==="shift"){
+  // Keep every foot near its hip while the body travels. Previously only one
+  // foot was repositioned per 26px advance, so the other seven could trail
+  // hundreds of pixels behind and produce giant stretched legs.
+  const previous={...center};
   const t=ease(Math.min(1,elapsed/SHIFT_MS));
   center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
+  if(playing&&elapsed>=SHIFT_MS)center={...to};
+  const dx=center.x-previous.x,dy=center.y-previous.y;
+  legs.forEach(leg=>{
+   leg.planted.x+=dx;
+   leg.planted.y+=dy;
+  });
   if(playing&&elapsed>=SHIFT_MS){
-   center={...to};stepNumber++;startStep();
+   stepNumber++;startStep();
   }
  }
  if(playing&&phase==="pause"&&elapsed>=PAUSE_MS){position++;assign(position);}
