@@ -19,7 +19,7 @@ def show_filing_reader(results: list[dict], height: int = 760) -> None:
 body{margin:0;background:#e9edf2;color:#162032;font-family:Arial,Helvetica,sans-serif}
 .toolbar{height:57px;background:#121c2b;color:#f8fafc;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;gap:10px}
 .toolbar small{color:#9caec6}button{background:#304866;border:1px solid #56718e;color:white;padding:8px 12px;border-radius:7px;cursor:pointer}
-.viewport{height:635px;overflow:auto;position:relative;scroll-behavior:smooth}
+.viewport{height:635px;overflow:auto;position:relative;scroll-behavior:auto}
 .paper{position:relative;width:min(780px,calc(100% - 32px));margin:20px auto 32px;padding:42px 52px 60px;background:white;min-height:940px;box-shadow:0 2px 15px #a9b1bd75}
 .heading{font-size:19px;text-align:center;font-weight:bold;margin:0 0 8px}
 .subheading{text-align:center;font-size:11px;color:#64748b;margin-bottom:30px}
@@ -28,7 +28,7 @@ body{margin:0;background:#e9edf2;color:#162032;font-family:Arial,Helvetica,sans-
 .passage .category{font:700 11px Arial,sans-serif;letter-spacing:.02em;margin-bottom:4px}
 mark{color:inherit;background:transparent;border-radius:1px;padding:0 1px;transition:background .25s,box-shadow .25s}mark.found{background:var(--topic);box-shadow:0 0 0 1px var(--topic)}
 .overlay{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:2}
-.overlay path{fill:none;stroke-width:2.2;opacity:.78}
+.overlay path{fill:none;stroke-width:1;opacity:.18}
 .spider{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:3}
 .spider .leg{fill:none;stroke:#f02f76;stroke-width:2.1;stroke-linejoin:round;stroke-linecap:round}
 .spider .joint{fill:#ffe45e;stroke:#f02f76;stroke-width:.7}
@@ -99,8 +99,8 @@ const findings=prepared.flatMap((p,i)=>{
  return [...new Set(picks)].map(mark=>({mark,category:p.category,passage:i}));
 });
 let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const FOOT_MS=340,BODY_MS=430,REST_MS=100;
-let phase="foot",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null;
+const FOOT_MS=360,BODY_MS=430,REST_MS=130;
+let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center},target=null,footStart=null,footEnd=null,bodyDuration=BODY_MS;
 const order=[0,4,1,5,2,6,3,7];
 function baseFoot(leg,origin=center){
  const angle=[-1.15,-.4,.4,1.15][leg.i];
@@ -118,12 +118,14 @@ function assign(i){
  from={...center};
  footStart=baseFoot(leg,center);
  footEnd={...dest};
- phase="foot";elapsed=0;
+ bodyDuration=Math.max(BODY_MS,Math.min(1500,distance(from,to)*1.5));
+ phase="body";elapsed=0;
  counter.textContent="Finding "+(i+1)+" / "+findings.length;
  status.textContent=target.category+" · "+target.mark.textContent;
 }
 function connect(mark,category){
- if(linked[category]){
+ // Keep the report readable: do not draw long links across distant passages.
+ if(linked[category]&&Math.abs(point(linked[category]).y-point(mark).y)<100){
   const a=point(linked[category]),b=point(mark),curve=make("path",lines);
   curve.setAttribute("d","M"+a.x+" "+a.y+" Q"+(a.x+b.x)/2+" "+(Math.min(a.y,b.y)-35)+" "+b.x+" "+b.y);
   curve.setAttribute("stroke",palette[category]||"#ff68ba");
@@ -139,15 +141,16 @@ function frame(now){
  if(playing&&findings.length)elapsed+=delta;
  const smooth=t=>t*t*(3-2*t);
  if(phase==="body"){
-  const t=smooth(Math.min(1,elapsed/BODY_MS));
+  const t=smooth(Math.min(1,elapsed/bodyDuration));
   center={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
-  if(playing&&elapsed>=BODY_MS){phase="rest";elapsed=0;}
+  if(playing&&elapsed>=bodyDuration){phase="foot";elapsed=0;footStart=baseFoot(legs[activeLeg]);}
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
  // Camera follows smoothly without jumping ahead of the spider.
  if(playing){
-  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.5);
-  viewport.scrollTop+=(wanted-viewport.scrollTop)*.12;
+  const wanted=Math.max(0,Math.min(viewport.scrollHeight-viewport.clientHeight,center.y+paper.offsetTop-viewport.clientHeight*.5));
+  // Synchronize the camera with the spider every frame.
+  viewport.scrollTop=wanted;
  }
  legs.forEach((leg,n)=>{
   const hip={x:center.x+leg.side*12,y:center.y+(leg.i-1.5)*8};
@@ -157,9 +160,6 @@ function frame(now){
     const t=Math.min(1,elapsed/FOOT_MS),s=smooth(t);
     foot={x:footStart.x+(footEnd.x-footStart.x)*s,
           y:footStart.y+(footEnd.y-footStart.y)*s-Math.sin(Math.PI*t)*25};
-   }else if(phase==="body"){
-    // The foot is planted on the highlighted word while the body crawls toward it.
-    foot={...footEnd};
    }
   }
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
@@ -170,7 +170,7 @@ function frame(now){
  });
  if(playing&&phase==="foot"&&elapsed>=FOOT_MS){
   reveal(target.mark,target.category);
-  phase="body";elapsed=0;
+  phase="rest";elapsed=0;
  }
  if(playing&&phase==="rest"&&elapsed>=REST_MS){position++;assign(position);}
  requestAnimationFrame(frame);
@@ -179,7 +179,7 @@ function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
  center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
- viewport.scrollTo({top:0,behavior:"instant"});
+ viewport.scrollTop=0;
  if(findings.length)assign(0);
 }
 play.onclick=()=>{if(position>=findings.length)reset();else{playing=!playing;play.textContent=playing?"Pause":"Play";}};
