@@ -48,7 +48,7 @@ records.forEach((r,i)=>{
  pages.appendChild(card);entries.push({card,body});
 });
 let index=0,playing=true,timer=null;
-function escapeRegExp(s){return s.replace(/[^a-zA-Z0-9 ]/g, "\\function escapeRegExp(s){return s.replace(/[.*+?^$\u007b\u007d()|[\]\\]/g,"\\$&");}");}
+function escapeRegExp(s){return s.replace(/[^a-zA-Z0-9 ]/g, "\\$&");}
 function highlight(r,el){
  const terms=r.keywords.split(",").map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
  if(!terms.length)return;
