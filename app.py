@@ -1,6 +1,8 @@
 """Streamlit UI for exploring public SEC 10-K and 10-Q filings."""
 import pandas as pd
 import requests
+from io import BytesIO
+from pypdf import PdfReader
 import streamlit as st
 
 from src.analyzer import CATEGORIES, analyze, category_counts, highlighted_html
@@ -13,34 +15,61 @@ st.caption("Explore public SEC filings and find highlighted passages by financia
 st.info("Educational research tool. Keyword matches are not investment advice or verified financial conclusions.")
 
 with st.sidebar:
-    st.header("Find a filing")
-    ticker = st.text_input("Stock ticker", "AAPL").strip().upper()
-    form = st.selectbox("SEC form", ["10-K", "10-Q"])
-    email = st.text_input("Your contact email (required by SEC)", placeholder="you@example.com")
-    load = st.button("Analyze latest filing", type="primary", use_container_width=True)
-    st.caption("The email is used only in the SEC request User-Agent. It is not saved by this app.")
+    st.header("¿Qué quieres analizar?")
+    mode = st.radio("Origen del documento", ["Buscar reporte de empresa (SEC)", "Subir mi propio PDF"])
+    if mode == "Buscar reporte de empresa (SEC)":
+        st.info("Escribe el símbolo bursátil de una empresa. La aplicación descarga automáticamente su último reporte público desde la SEC. No necesitas subir ningún archivo.")
+        ticker = st.text_input("Símbolo bursátil (ticker)", "AAPL", help="Ejemplos: AAPL = Apple, MSFT = Microsoft, NVDA = NVIDIA.").strip().upper()
+        form = st.selectbox("Tipo de reporte SEC", ["10-K", "10-Q"])
+        st.caption("10-K = reporte anual completo. 10-Q = reporte trimestral con resultados recientes.")
+        email = st.text_input("Correo de contacto (requerido por SEC)", placeholder="tu@correo.com")
+        load = st.button("Buscar y analizar reporte", type="primary", use_container_width=True)
+        st.caption("El correo se utiliza en la solicitud a la SEC; esta app no lo guarda.")
+    else:
+        st.info("Sube un PDF con texto seleccionable para que la araña encuentre y resalte términos financieros.")
+        uploaded = st.file_uploader("Selecciona tu PDF", type=["pdf"])
+        load = st.button("Analizar mi PDF", type="primary", use_container_width=True, disabled=uploaded is None)
+        st.caption("Los PDF escaneados como imágenes necesitan OCR, que aún no está incluido.")
 
 if load:
     try:
-        with st.spinner("Downloading and analyzing SEC filing..."):
-            session = sec_session(email)
-            cik, company = resolve_cik(session, ticker)
-            filing = latest_filing(session, cik, form)
-            text = download_filing(session, filing["url"])
-            results = analyze(text)
-            st.session_state["report"] = {"ticker": ticker, "company": company, **filing, "results": results}
-    except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
-        st.error(f"Could not analyze filing: {exc}")
+        if mode == "Buscar reporte de empresa (SEC)":
+            with st.spinner("Descargando y analizando el reporte de la SEC..."):
+                session = sec_session(email)
+                cik, company = resolve_cik(session, ticker)
+                filing = latest_filing(session, cik, form)
+                text = download_filing(session, filing["url"])
+                results = analyze(text)
+                st.session_state["report"] = {"ticker": ticker, "company": company, "source": "sec", **filing, "results": results}
+        else:
+            with st.spinner("Extrayendo y analizando tu PDF..."):
+                if uploaded.size > 20 * 1024 * 1024:
+                    raise ValueError("El archivo supera el límite de 20 MB.")
+                reader = PdfReader(BytesIO(uploaded.getvalue()))
+                if reader.is_encrypted:
+                    raise ValueError("El PDF está protegido con contraseña.")
+                if len(reader.pages) > 250:
+                    raise ValueError("El PDF tiene más de 250 páginas.")
+                text = "\\n".join(page.extract_text() or "" for page in reader.pages)
+                if len(text.strip()) < 80:
+                    raise ValueError("No se pudo extraer texto suficiente. Los PDF escaneados requieren OCR.")
+                results = analyze(text)
+                st.session_state["report"] = {"ticker": "PDF", "company": uploaded.name, "source": "upload", "form": "PDF propio", "date": "—", "url": "", "results": results}
+    except Exception as exc:
+        st.error(f"No se pudo analizar el documento: {exc}")
 
 report = st.session_state.get("report")
 if not report:
-    st.write("Enter a ticker and your contact email in the sidebar, then click **Analyze latest filing**.")
+    st.write("Elige **Buscar reporte de empresa (SEC)** o **Subir mi propio PDF** en el menú izquierdo para empezar.")
     st.stop()
 
-st.subheader(f"{report['company']} ({report['ticker']})")
-st.write(f"**Form:** {report['form']} · **Filed:** {report['date']} · [Original SEC filing]({report['url']})")
-st.subheader("🕷️ Live document scan")
-st.caption("White-page reconstruction of extracted SEC text. The spider highlights matched terms and draws links between related findings as it moves.")
+st.subheader(report["company"] if report.get("source") == "upload" else f"{report['company']} ({report['ticker']})")
+if report.get("source") == "upload":
+    st.write("**Origen:** PDF subido desde tu computadora · **Análisis:** palabras clave financieras")
+else:
+    st.write(f"**Reporte:** {report['form']} · **Presentado:** {report['date']} · [Ver reporte original en SEC]({report['url']})")
+st.subheader("🕷️ Análisis visual del documento")
+st.caption("Vista reconstruida del texto extraído. La araña recorre las coincidencias financieras; no reproduce exactamente el diseño del PDF original.")
 show_filing_reader(report["results"])
 counts = category_counts(report["results"])
 cols = st.columns(3)
