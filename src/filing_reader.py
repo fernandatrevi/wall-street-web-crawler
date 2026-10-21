@@ -90,36 +90,35 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
  joint.setAttribute("r","2.5");foot.setAttribute("r","3");
  legs.push({side,i,path,joint,foot,goal:null,contact:false});
 }
-let center={x:350,y:220},from={...center},to={...center};
-let position=0,playing=true,last=performance.now(),elapsed=0,linked={};
-const LEG_MS=55, BODY_MS=100, REST_MS=20;
+// Analyze and lay out every keyword BEFORE starting the animation.
+const prepared=records.map((r,i)=>{
+ const marks=prepare(i);
+ return {marks,category:r.category};
+});
+let center={x:paper.clientWidth/2,y:180},from={...center},to={...center};
+let position=0,playing=true,last=performance.now(),linked={};
+const LEG_MS=125, BODY_MS=130, REST_MS=25;
 let phase="body",phaseElapsed=0,activeLeg=0,targets=[];
 function restingFoot(leg){
  const angle=[-1.2,-.4,.4,1.2][leg.i];
- return {x:center.x+leg.side*(145+Math.cos(angle)*25),y:center.y+angle*145};
+ return {x:center.x+leg.side*(150+Math.cos(angle)*25),y:center.y+angle*110};
 }
 function assign(i){
- const e=entries[i],marks=prepare(i);
+ const e=entries[i],marks=prepared[i].marks;
  if(!marks.length)return false;
  e.p.scrollIntoView({block:"center",behavior:"instant"});
  const locations=marks.map(mark=>({mark,pt:point(mark)}));
  const avg=locations.reduce((acc,o)=>({x:acc.x+o.pt.x,y:acc.y+o.pt.y}),{x:0,y:0});
  avg.x/=locations.length;avg.y/=locations.length;
  from={...center};
- to={x:Math.max(65,Math.min(paper.clientWidth-65,avg.x)),y:avg.y+20};
- // Distribute targets over the width. One leg moves at a time.
+ to={x:Math.max(65,Math.min(paper.clientWidth-65,avg.x)),y:avg.y+15};
  const sorted=[...locations].sort((a,b)=>a.pt.x-b.pt.x);
- targets=[];
  const count=Math.min(8,sorted.length);
- for(let n=0;n<count;n++){
+ targets=Array.from({length:count},(_,n)=>{
   const idx=count===1?0:Math.round(n*(sorted.length-1)/(count-1));
-  targets.push(sorted[idx]);
- }
- legs.forEach((leg,n)=>{
-  leg.goal=targets[n]||null;leg.contact=false;
-  leg.planted=restingFoot(leg);
-  leg.start={...leg.planted};
+  return sorted[idx];
  });
+ legs.forEach((leg,n)=>{leg.goal=targets[n]||null;leg.contact=false;});
  phase="body";phaseElapsed=0;activeLeg=0;
  counter.textContent="Scanning "+(i+1)+" / "+records.length+" passages";
  status.textContent=records[i].category+" · "+records[i].keywords;
@@ -138,7 +137,7 @@ function reveal(mark,category){
  mark.classList.add("found");connect(mark,category);
 }
 function frame(now){
- const delta=Math.min(60,now-last);last=now;
+ const delta=Math.min(45,now-last);last=now;
  if(playing&&records.length)phaseElapsed+=delta;
  if(phase==="body"){
   const t=Math.min(1,phaseElapsed/BODY_MS),ease=t*t*(3-2*t);
@@ -148,42 +147,34 @@ function frame(now){
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
  legs.forEach((leg,n)=>{
   const hip={x:center.x+leg.side*7,y:center.y+(leg.i-1.5)*5};
-  let foot=leg.planted||restingFoot(leg);
+  const rest=restingFoot(leg);
+  let foot={...rest};
   if(phase==="legs"&&n===activeLeg&&leg.goal){
-   // Exclusive lock: ONLY the active leg is allowed to move.
-   const target=point(leg.goal.mark),t=Math.min(1,phaseElapsed/LEG_MS);
-   const smooth=t*t*(3-2*t);
-   const start=leg.start||foot;
-   foot={x:start.x+(target.x-start.x)*smooth,
-         y:start.y+(target.y-start.y)*smooth-Math.sin(Math.PI*t)*17};
+   // Only this leg moves; all seven others stay at their resting positions.
+   const t=Math.min(1,phaseElapsed/LEG_MS);
+   const reach=t<.5?t*2:(1-t)*2;
+   const smooth=reach*reach*(3-2*reach);
+   const target=point(leg.goal.mark);
+   foot={x:rest.x+(target.x-rest.x)*smooth,
+         y:rest.y+(target.y-rest.y)*smooth-Math.sin(Math.PI*t)*12};
+   if(t>=.5&&!leg.contact){
+    reveal(leg.goal.mark,records[position].category);
+    leg.contact=true;
+   }
   }
-  leg.tip={...foot};
-  // Two long segments, with the knee pushed outward for an articulated shape.
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.48+leg.side*52,y:hip.y+dy*.48-28};
+  const knee={x:hip.x+dx*.5+leg.side*48,y:hip.y+dy*.5-26};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
  if(playing&&phase==="legs"&&phaseElapsed>=LEG_MS){
-  const leg=legs[activeLeg];
-  if(leg.goal){
-   const target=point(leg.goal.mark);
-   leg.planted={...target};leg.tip={...target};
-   reveal(leg.goal.mark,records[position].category);
-   leg.contact=true;
-  }
-  activeLeg++;
-  phaseElapsed=0;
-  // The next leg cannot begin until the previous leg reaches its target.
-  if(activeLeg<legs.length){
-   legs[activeLeg].start={...(legs[activeLeg].planted||restingFoot(legs[activeLeg]))};
-  }else{
-   phase="rest";
-  }
+  // Movement lock releases only after the active leg returns to rest.
+  activeLeg++;phaseElapsed=0;
+  if(activeLeg>=legs.length)phase="rest";
  }
  if(playing&&phase==="rest"&&phaseElapsed>=REST_MS){
-  entries[position].marks.forEach(m=>reveal(m,records[position].category));
+  prepared[position].marks.forEach(m=>reveal(m,records[position].category));
   position++;
   if(position>=records.length){
    playing=false;play.textContent="Replay";
@@ -194,9 +185,8 @@ function frame(now){
 }
 function reset(){
  position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
- entries.forEach((e,i)=>{e.div.textContent=records[i].text;e.marks=[];});
+ prepared.forEach(p=>p.marks.forEach(m=>m.classList.remove("found")));
  center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
- legs.forEach(leg=>{leg.tip=restingFoot(leg);leg.planted={...leg.tip};leg.start={...leg.tip};});
  viewport.scrollTo({top:0,behavior:"instant"});
  if(records.length)assign(0);
 }
