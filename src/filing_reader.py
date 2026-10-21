@@ -29,7 +29,10 @@ body{margin:0;background:#e9edf2;color:#162032;font-family:Arial,Helvetica,sans-
 mark{color:#121212;border-radius:1px;padding:0 1px}
 .overlay{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:2}
 .overlay path{fill:none;stroke-width:2.2;opacity:.78}
-.spider{position:absolute;z-index:3;pointer-events:none;font-size:28px;filter:drop-shadow(0 0 3px #3b82f6);transition:top .7s ease,left .7s ease}
+.spider{position:absolute;z-index:3;pointer-events:none;width:180px;height:180px;overflow:visible;filter:drop-shadow(0 2px 3px #ff3b7c55);transform:translate(-50%,-50%)}
+.spider .leg{fill:none;stroke:#ff477e;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.spider .joint{fill:#ffe066;stroke:none}
+.spider .body{fill:#17202d;stroke:#ff477e;stroke-width:1.6}
 .status{background:#121c2b;color:#cbd5e1;padding:10px 16px;font-size:12px}
 @media(max-width:550px){.paper{padding:26px 20px}.toolbar{font-size:11px}.passage{font-size:11px}}
 </style></head><body>
@@ -38,7 +41,8 @@ mark{color:#121212;border-radius:1px;padding:0 1px}
 <div class="viewport" id="viewport"><article class="paper" id="paper">
 <div class="heading">FINANCIAL FILING · DOCUMENT SCAN</div>
 <div class="subheading">Extracted SEC filing passages · highlights appear as the spider visits each finding</div>
-<div id="passages"></div><svg class="overlay" id="lines" aria-hidden="true"></svg><div class="spider" id="spider">🕷️</div>
+<div id="passages"></div><svg class="overlay" id="lines" aria-hidden="true"></svg><svg class="spider" id="spider" viewBox="-90 -90 180 180" aria-label="Animated eight-legged spider">
+<g id="legs"></g><ellipse class="body" rx="8" ry="12"/><circle cx="-3" cy="-5" r="1.8" fill="#ffe066"/><circle cx="3" cy="-5" r="1.8" fill="#ffe066"/></svg>
 </article></div><div class="status" id="status">Scanning the report for financial topics</div>
 <script>
 const records=__DATA__;
@@ -58,6 +62,36 @@ records.forEach((r,i)=>{
 });
 const ns="http://www.w3.org/2000/svg";
 const previous={};let position=0,playing=true;
+const legGroup=document.getElementById("legs");
+const legs=[];
+for(let side of [-1,1])for(let i=0;i<4;i++){
+ const path=document.createElementNS(ns,"polyline");path.setAttribute("class","leg");legGroup.appendChild(path);
+ const joint=document.createElementNS(ns,"circle");joint.setAttribute("class","joint");joint.setAttribute("r","2.5");legGroup.appendChild(joint);
+ const foot=document.createElementNS(ns,"circle");foot.setAttribute("class","joint");foot.setAttribute("r","2");legGroup.appendChild(foot);
+ legs.push({side,i,path,joint,foot});
+}
+let spiderX=100,spiderY=180,fromX=100,fromY=180,toX=100,toY=180,moveStart=performance.now(),moveDuration=1100;
+function animateSpider(now){
+ const t=Math.min(1,(now-moveStart)/moveDuration),ease=t*t*(3-2*t);
+ spiderX=fromX+(toX-fromX)*ease;spiderY=fromY+(toY-fromY)*ease;
+ spider.style.left=spiderX+"px";spider.style.top=spiderY+"px";
+ const moving=playing&&t<1;
+ for(const leg of legs){
+  const {side,i,path,joint,foot}=leg;
+  const spread=[-1.05,-.38,.38,1.05][i];
+  const phase=now/125+i*Math.PI*.8+(side===1?Math.PI:0);
+  const step=moving?Math.sin(phase)*12:Math.sin(phase)*1.4;
+  const lift=moving?Math.max(0,Math.cos(phase))*11:0;
+  const hipX=side*6,hipY=(i-1.5)*5;
+  const kneeX=side*(35+Math.cos(spread)*12),kneeY=spread*34+step*.35;
+  const footX=side*(68+Math.cos(spread)*8)+step,footY=spread*55+step*.6-lift;
+  path.setAttribute("points",hipX+","+hipY+" "+kneeX+","+kneeY+" "+footX+","+footY);
+  joint.setAttribute("cx",kneeX);joint.setAttribute("cy",kneeY);
+  foot.setAttribute("cx",footX);foot.setAttribute("cy",footY);
+ }
+ requestAnimationFrame(animateSpider);
+}
+requestAnimationFrame(animateSpider);
 function termsOf(r){return r.keywords.split(",").map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length)}
 function highlight(r,body){
  const terms=termsOf(r),text=r.text;
@@ -93,7 +127,10 @@ function tick(){
  const target=mark||e.p;
  if(mark&&previous[r.category])connect(previous[r.category],mark,palette[r.category]||"#60a5fa");
  if(mark)previous[r.category]=mark;
- const pt=point(target);spider.style.left=Math.min(pt.x+14,paper.clientWidth-42)+"px";spider.style.top=(pt.y-35)+"px";
+ const pt=point(target);
+ fromX=spiderX;fromY=spiderY;
+ toX=Math.max(70,Math.min(pt.x+28,paper.clientWidth-70));
+ toY=pt.y-18;moveStart=performance.now();
  viewport.scrollTo({top:Math.max(0,e.p.offsetTop-viewport.clientHeight/3),behavior:"smooth"});
  counter.textContent="Found "+(position+1)+" / "+records.length+" matches";
  status.textContent=r.category+" · Passage "+r.passage+" · "+r.keywords;
@@ -103,7 +140,7 @@ function reset(){
  position=0;playing=true;play.textContent="Pause";svg.replaceChildren();
  Object.keys(previous).forEach(k=>delete previous[k]);
  entries.forEach((e,i)=>{e.body.textContent=records[i].text;e.p.classList.remove("current");e.label.style.color="#64748b"});
- viewport.scrollTo({top:0,behavior:"instant"});tick();
+ viewport.scrollTo({top:0,behavior:"instant"});fromX=spiderX;fromY=spiderY;tick();
 }
 play.onclick=()=>{if(position>=records.length)reset();else{playing=!playing;play.textContent=playing?"Pause":"Play";}};
 document.getElementById("restart").onclick=reset;
