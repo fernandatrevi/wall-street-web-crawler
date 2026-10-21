@@ -14,6 +14,17 @@ st.set_page_config(page_title="Wall Street Web Crawler", page_icon="📈", layou
 st.title("📈 Wall Street Web Crawler")
 st.caption("Explore public SEC filings and find highlighted passages by financial topic.")
 st.info("Educational research tool. Keyword matches are not investment advice or verified financial conclusions.")
+with st.expander("¿Cómo funciona esta aplicación? / How does it work?"):
+    st.markdown(
+        "**Buscar empresa (SEC):** escribe un símbolo bursátil como `AAPL` (Apple) o `MSFT` (Microsoft). "
+        "La aplicación descarga automáticamente el reporte público más reciente de la SEC. "
+        "**10-K** es el reporte anual y **10-Q** es el trimestral. "
+        "No necesitas tener el archivo.\\n\\n"
+        "**Subir mi PDF:** elige un archivo PDF de tu computadora. "
+        "El programa extrae su texto y busca términos financieros. "
+        "La araña recorre visualmente las coincidencias encontradas. "
+        "Por ahora no interpreta imágenes ni escaneos y no hace un análisis financiero con IA."
+    )
 
 with st.sidebar:
     st.header("Choose a document")
