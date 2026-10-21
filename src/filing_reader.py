@@ -91,27 +91,36 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
  legs.push({side,i,path,joint,foot,goal:null,contact:false});
 }
 let center={x:350,y:220},from={...center},to={...center};
-let stepStart=performance.now(),duration=680,position=0,playing=true,elapsed=0,last=performance.now();
-let targets=[],linked={};
+let position=0,playing=true,last=performance.now(),elapsed=0,linked={};
+const LEG_MS=145, BODY_MS=250, REST_MS=85;
+let phase="body",phaseElapsed=0,activeLeg=0,targets=[];
+function restingFoot(leg){
+ const angle=[-1.2,-.4,.4,1.2][leg.i];
+ return {x:center.x+leg.side*(145+Math.cos(angle)*25),y:center.y+angle*145};
+}
 function assign(i){
  const e=entries[i],marks=prepare(i);
  if(!marks.length)return false;
  e.p.scrollIntoView({block:"center",behavior:"smooth"});
- const locations=marks.map(m=>({mark:m,pt:point(m)}));
- const avg=locations.reduce((a,o)=>({x:a.x+o.pt.x,y:a.y+o.pt.y}),{x:0,y:0});
+ const locations=marks.map(mark=>({mark,pt:point(mark)}));
+ const avg=locations.reduce((acc,o)=>({x:acc.x+o.pt.x,y:acc.y+o.pt.y}),{x:0,y:0});
  avg.x/=locations.length;avg.y/=locations.length;
  from={...center};
- to={x:Math.max(75,Math.min(paper.clientWidth-75,avg.x)),y:avg.y+26};
- // Each leg gets a different word; if there are fewer than 8 words,
- // remaining legs plant around the body rather than converging to one point.
- // Spread the eight legs across the full line width, including both edges.
+ to={x:Math.max(65,Math.min(paper.clientWidth-65,avg.x)),y:avg.y+20};
+ // Distribute targets over the width. One leg moves at a time.
  const sorted=[...locations].sort((a,b)=>a.pt.x-b.pt.x);
  targets=[];
- for(let n=0;n<Math.min(8,sorted.length);n++){
-  const idx=sorted.length===1?0:Math.round(n*(sorted.length-1)/(Math.min(8,sorted.length)-1));
+ const count=Math.min(8,sorted.length);
+ for(let n=0;n<count;n++){
+  const idx=count===1?0:Math.round(n*(sorted.length-1)/(count-1));
   targets.push(sorted[idx]);
  }
- legs.forEach((leg,n)=>{leg.goal=targets[n]||null;leg.contact=false;});
+ legs.forEach((leg,n)=>{
+  leg.goal=targets[n]||null;leg.contact=false;
+  leg.planted=leg.tip||restingFoot(leg);
+  leg.start={...leg.planted};
+ });
+ phase="body";phaseElapsed=0;activeLeg=0;
  counter.textContent="Scanning "+(i+1)+" / "+records.length+" passages";
  status.textContent=records[i].category+" · "+records[i].keywords;
  return true;
@@ -129,47 +138,65 @@ function reveal(mark,category){
  mark.classList.add("found");connect(mark,category);
 }
 function frame(now){
- const delta=Math.min(50,now-last);last=now;
- if(playing&&records.length)elapsed+=delta;
- const t=Math.min(1,elapsed/duration),ease=t*t*(3-2*t);
- center.x=from.x+(to.x-from.x)*ease;center.y=from.y+(to.y-from.y)*ease;
- body.setAttribute("transform","translate("+center.x+" "+(center.y+Math.sin(now/130)*2)+")");
- const spread=[-1.2,-.4,.4,1.2];
+ const delta=Math.min(60,now-last);last=now;
+ if(playing&&records.length)phaseElapsed+=delta;
+ if(phase==="body"){
+  const t=Math.min(1,phaseElapsed/BODY_MS),ease=t*t*(3-2*t);
+  center.x=from.x+(to.x-from.x)*ease;center.y=from.y+(to.y-from.y)*ease;
+  if(t>=1&&playing){phase="legs";phaseElapsed=0;activeLeg=0;}
+ }
+ body.setAttribute("transform","translate("+center.x+" "+center.y+")");
  legs.forEach((leg,n)=>{
-  const {side,i}=leg,angle=spread[i],phase=now/190+i*Math.PI*.75+(side>0?Math.PI:0);
-  const hip={x:center.x+side*7,y:center.y+(i-1.5)*5};
-  let foot;
-  if(leg.goal){
-   const p=point(leg.goal.mark);
-   const distance=Math.hypot(p.x-hip.x,p.y-hip.y);
-   // Reach the actual highlighted term if close; otherwise extend toward it.
-   const factor=1; // Reach every matched word, including the document edges.
-   foot={x:hip.x+(p.x-hip.x)*factor,y:hip.y+(p.y-hip.y)*factor};
-   if(t>.42&&!leg.contact){reveal(leg.goal.mark,records[position].category);leg.contact=true;}
-  }else{
-   foot={x:center.x+side*(110+Math.cos(angle)*20),y:center.y+angle*105};
+  const hip={x:center.x+leg.side*7,y:center.y+(leg.i-1.5)*5};
+  let foot=leg.planted||restingFoot(leg);
+  if(phase==="legs"&&n===activeLeg&&leg.goal){
+   // Exclusive lock: ONLY the active leg is allowed to move.
+   const target=point(leg.goal.mark),t=Math.min(1,phaseElapsed/LEG_MS);
+   const smooth=t*t*(3-2*t);
+   const start=leg.start||foot;
+   foot={x:start.x+(target.x-start.x)*smooth,
+         y:start.y+(target.y-start.y)*smooth-Math.sin(Math.PI*t)*17};
   }
-  const walk=playing&&t<1?Math.sin(phase)*8:0;
-  const lift=playing&&t<1?Math.max(0,Math.cos(phase))*7:0;
-  if(!leg.contact){foot.x+=walk*(1-t);foot.y-=lift*(1-t);}
-  const knee={x:hip.x+(foot.x-hip.x)*.58+side*35,y:hip.y+(foot.y-hip.y)*.52-22};
+  leg.tip={...foot};
+  // Two long segments, with the knee pushed outward for an articulated shape.
+  const dx=foot.x-hip.x,dy=foot.y-hip.y;
+  const knee={x:hip.x+dx*.48+leg.side*52,y:hip.y+dy*.48-28};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
  });
- if(playing&&t>=1&&records.length){
-  // Reveal remaining keywords in this passage as the spider completes the scan.
+ if(playing&&phase==="legs"&&phaseElapsed>=LEG_MS){
+  const leg=legs[activeLeg];
+  if(leg.goal){
+   const target=point(leg.goal.mark);
+   leg.planted={...target};leg.tip={...target};
+   reveal(leg.goal.mark,records[position].category);
+   leg.contact=true;
+  }
+  activeLeg++;
+  phaseElapsed=0;
+  // The next leg cannot begin until the previous leg reaches its target.
+  if(activeLeg<legs.length){
+   legs[activeLeg].start={...(legs[activeLeg].planted||restingFoot(legs[activeLeg]))};
+  }else{
+   phase="rest";
+  }
+ }
+ if(playing&&phase==="rest"&&phaseElapsed>=REST_MS){
   entries[position].marks.forEach(m=>reveal(m,records[position].category));
   position++;
-  if(position>=records.length){playing=false;play.textContent="Replay";counter.textContent="Complete · "+records.length+" passages";}
-  else{from={...center};elapsed=0;assign(position);}
+  if(position>=records.length){
+   playing=false;play.textContent="Replay";
+   counter.textContent="Complete · "+records.length+" passages";
+  }else assign(position);
  }
  requestAnimationFrame(frame);
 }
 function reset(){
- position=0;elapsed=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
+ position=0;playing=true;play.textContent="Pause";lines.replaceChildren();linked={};
  entries.forEach((e,i)=>{e.div.textContent=records[i].text;e.marks=[];});
- from={x:paper.clientWidth/2,y:180};center={...from};to={...from};
+ center={x:paper.clientWidth/2,y:180};from={...center};to={...center};
+ legs.forEach(leg=>{leg.tip=restingFoot(leg);leg.planted={...leg.tip};leg.start={...leg.tip};});
  viewport.scrollTo({top:0,behavior:"instant"});
  if(records.length)assign(0);
 }
