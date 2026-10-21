@@ -92,7 +92,7 @@ for(let side of [-1,1])for(let i=0;i<4;i++){
 }
 let center={x:350,y:220},from={...center},to={...center};
 let position=0,playing=true,last=performance.now(),elapsed=0,linked={};
-const LEG_MS=145, BODY_MS=250, REST_MS=85;
+const LEG_MS=55, BODY_MS=100, REST_MS=20;
 let phase="body",phaseElapsed=0,activeLeg=0,targets=[];
 function restingFoot(leg){
  const angle=[-1.2,-.4,.4,1.2][leg.i];
@@ -101,7 +101,7 @@ function restingFoot(leg){
 function assign(i){
  const e=entries[i],marks=prepare(i);
  if(!marks.length)return false;
- e.p.scrollIntoView({block:"center",behavior:"smooth"});
+ e.p.scrollIntoView({block:"center",behavior:"instant"});
  const locations=marks.map(mark=>({mark,pt:point(mark)}));
  const avg=locations.reduce((acc,o)=>({x:acc.x+o.pt.x,y:acc.y+o.pt.y}),{x:0,y:0});
  avg.x/=locations.length;avg.y/=locations.length;
@@ -117,7 +117,7 @@ function assign(i){
  }
  legs.forEach((leg,n)=>{
   leg.goal=targets[n]||null;leg.contact=false;
-  leg.planted=leg.tip||restingFoot(leg);
+  leg.planted=restingFoot(leg);
   leg.start={...leg.planted};
  });
  phase="body";phaseElapsed=0;activeLeg=0;
