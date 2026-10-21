@@ -97,11 +97,11 @@ const prepared=records.map((r,i)=>{
 });
 let center={x:paper.clientWidth/2,y:180},from={...center},to={...center};
 let position=0,playing=true,last=performance.now(),linked={};
-const LEG_MS=125, BODY_MS=130, REST_MS=25;
+const LEG_MS=105, BODY_MS=145, REST_MS=15;
 let phase="body",phaseElapsed=0,activeLeg=0,targets=[];
 function restingFoot(leg){
  const angle=[-1.2,-.4,.4,1.2][leg.i];
- return {x:center.x+leg.side*(150+Math.cos(angle)*25),y:center.y+angle*110};
+ return {x:center.x+leg.side*(185+Math.cos(angle)*30),y:center.y+angle*110};
 }
 function assign(i){
  const e=entries[i],marks=prepared[i].marks;
@@ -163,7 +163,7 @@ function frame(now){
    }
   }
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.5+leg.side*48,y:hip.y+dy*.5-26};
+  const knee={x:hip.x+dx*.52+leg.side*48,y:hip.y+dy*.52-22};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
