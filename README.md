@@ -1,42 +1,62 @@
-# Wall Street Web Crawler
+# Wall Street Web Crawler 🕷️
 
-Python + Streamlit app to explore SEC EDGAR 10-K and 10-Q filings, detect financial topics, highlight matching text and export findings to CSV.
+A Streamlit app that finds financial keywords in **public SEC company reports** or in **PDF files you upload**. The spider animates a tour through detected terms. Analysis is performed before the animation begins.
+
+## What does the app search?
+
+**Option 1 — Find a company report (SEC):** Enter a US stock symbol (ticker) such as `AAPL` (Apple), `MSFT` (Microsoft), or `NVDA` (NVIDIA). The app retrieves the company's latest available report from SEC EDGAR:
+
+- **10-K:** Annual report covering the fiscal year, risks, operations, and audited annual financial statements.
+- **10-Q:** Quarterly report with interim financial statements and updates. Typically submitted for the first three quarters.
+
+An email is required for SEC requests; it is used in the request User-Agent, not stored by this application.
+
+**Option 2 — Upload my own PDF:** Upload a text-based PDF (up to 15 MB, 200 pages, 1 million extracted characters). It is analyzed locally within the running Streamlit process; it is **not sent to SEC**. Uploaded text is not written to a project file. Do not upload confidential documents to a publicly deployed instance you do not trust. Scanned/image-only and password-protected PDFs are not supported.
+
+Both modes use the same **financial keyword categories**, so a non-financial PDF may return few or no results.
+
+## Run locally in VS Code
+
+```bash
+git pull
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
+
+Open http://localhost:8501. Select your input mode in the left sidebar.
 
 ## Run in Codespaces
 
-Open **Code → Codespaces → Create codespace on main**, then in the terminal run:
+Open **Code → Codespaces → Create codespace on main** and run:
 
 ```bash
 python -m pip install -r requirements.txt
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Open the forwarded port **8501** to use the app. Enter a ticker (e.g. `AAPL`), a filing type, and your own contact email (required for the SEC User-Agent), then click **Analyze latest filing**.
+Open forwarded port 8501.
 
-## Run tests
+## Tests
 
 ```bash
 python -m pytest -q
 ```
 
-## Files
+## Project files
 
-- `app.py`: Streamlit user interface
-- `src/sec_client.py`: SEC ticker lookup and filing download
-- `src/analyzer.py`: keyword-based passage classification and HTML highlighting
-- `tests/test_analyzer.py`: unit tests
-- `requirements.txt`: Python dependencies
+- `app.py`: Streamlit interface and two document modes
+- `src/sec_client.py`: SEC ticker lookup and filing retrieval
+- `src/pdf_reader.py`: PDF validation and text extraction
+- `src/analyzer.py`: keyword-based financial findings
+- `src/filing_reader.py`: animated spider and highlighted reader
+- `tests/`: validation and analyzer tests
 
-## Topics
+## Financial categories
 
 Revenue, Competition, Debt & financing, Research & development, Risk, Shares.
 
 ## Limitations
 
-This is **keyword matching, not AI semantic analysis**. It can miss synonyms and produce false positives. Text extraction does not preserve original PDF page layout, tables or charts. The app analyzes up to 500 category/passage matches and shows up to 100 excerpts; CSV export contains all filtered matches. The latest filing must appear in the company's recent SEC submissions feed. SEC may limit requests; do not scrape in bulk. Verify findings against the linked original SEC filing. Not investment advice.
+This is **keyword matching, not a trained AI model or financial recommendation**. The spider is an animated replay of findings; it does not independently read or reason about text. Extracted text is reconstructed for display and does not reproduce PDF tables, graphics, or precise original page positions. The app analyzes up to 500 category/passage matches and shows up to 100 excerpts; CSV export includes filtered findings. SEC may limit requests; avoid bulk scraping and verify findings against original reports.
 
-## Next improvements
-
-Semantic search, filing-section navigation, historical comparisons, colored in-document annotations and financial charts.
-
-SEC developer guidance: https://www.sec.gov/about/developer-resources
+SEC guidance: https://www.sec.gov/about/developer-resources
