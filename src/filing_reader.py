@@ -97,7 +97,7 @@ const prepared=records.map((r,i)=>{
 });
 // All keywords are extracted and laid out before playback.
 let center={x:paper.clientWidth/2,y:180},position=0,playing=true,last=performance.now(),linked={};
-const STEP_MS=135, BODY_MS=90, REST_MS=15, MAX_REACH=265;
+const STEP_MS=135, BODY_MS=120, REST_MS=15, MAX_REACH=210;
 let phase="body",elapsed=0,activeLeg=0,from={...center},to={...center};
 const order=[0,4,1,5,2,6,3,7]; // one foot at a time, alternating sides
 function baseFoot(leg,origin=center){
@@ -111,14 +111,14 @@ function clampReach(hip,point,reach=MAX_REACH){
 }
 function assign(i){
  const marks=prepared[i].marks;
- entries[i].p.scrollIntoView({block:"center",behavior:"instant"});
+ // Scroll follows the spider after its body arrives, not the paragraph.
  const locations=marks.map(mark=>({mark,pt:point(mark)}));
  if(!locations.length){position++;if(position<records.length)return assign(position);playing=false;return;}
  const avg=locations.reduce((a,o)=>({x:a.x+o.pt.x,y:a.y+o.pt.y}),{x:0,y:0});
  avg.x/=locations.length;avg.y/=locations.length;
  from={...center};
  // No body teleportation: move toward nearby words by a bounded distance.
- to=clampReach(from,{x:avg.x,y:avg.y+18},145);
+ to=clampReach(from,{x:avg.x,y:avg.y+18},115);
  const left=locations.filter(o=>o.pt.x<=to.x).sort((a,b)=>a.pt.y-b.pt.y);
  const right=locations.filter(o=>o.pt.x>to.x).sort((a,b)=>a.pt.y-b.pt.y);
  legs.forEach(leg=>{
@@ -151,6 +151,11 @@ function frame(now){
   if(t>=1&&playing){phase="legs";elapsed=0;activeLeg=0;}
  }
  body.setAttribute("transform","translate("+center.x+" "+center.y+")");
+ // Keep the spider inside the visible document viewport while scanning.
+ if(playing){
+  const wanted=Math.max(0,center.y+paper.offsetTop-viewport.clientHeight*.52);
+  if(Math.abs(viewport.scrollTop-wanted)>35)viewport.scrollTop=wanted;
+ }
  const movingIndex=phase==="legs"?order[activeLeg]:-1;
  legs.forEach((leg,n)=>{
   const hip={x:center.x+leg.side*8,y:center.y+(leg.i-1.5)*7};
@@ -166,7 +171,7 @@ function frame(now){
   }
   // Outward-bending knee: keep every limb on its own side.
   const dx=foot.x-hip.x,dy=foot.y-hip.y;
-  const knee={x:hip.x+dx*.5+leg.side*35,y:hip.y+dy*.5-18};
+  const knee={x:hip.x+dx*.5+leg.side*30,y:hip.y+dy*.5-20};
   leg.path.setAttribute("points",hip.x+","+hip.y+" "+knee.x+","+knee.y+" "+foot.x+","+foot.y);
   leg.joint.setAttribute("cx",knee.x);leg.joint.setAttribute("cy",knee.y);
   leg.foot.setAttribute("cx",foot.x);leg.foot.setAttribute("cy",foot.y);
